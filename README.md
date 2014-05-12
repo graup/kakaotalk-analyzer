@@ -9,7 +9,7 @@ least kind of functional versions up on GitHub.
 How to export messages
 ----------------------
 
-- In the app, go to a chatroom and select Settings -> Export Messages -> Send Text Messages Only
+- In the app, go to a chatroom and select Settings (설정) -> Export Messages (대화내용 이메일로 보내기) -> Send Text Messages Only (텍스트 메시지만 보내기)
 - Send the export to your own email account
 
 Usage
