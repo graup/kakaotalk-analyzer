@@ -15,4 +15,8 @@ How to export messages
 Usage
 -----
 
-Open a console and run `python kakaotalk.py plot path-to-file.txt`
+Open a console and run `python kakaotalk.py path-to-file.txt action [period]`
+
+Example output
+--------------
+![Example plot](http://f.cl.ly/items/3f0t1c3K1Y2n450u0z40/plot-output.png)
