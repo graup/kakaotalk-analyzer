@@ -227,6 +227,8 @@ class MessageExportAnalyer:
         ax.xaxis.set_major_formatter(date_formatter)
         ax.xaxis.set_minor_locator(weeks)
 
+        ax.set_ylim(bottom=0)
+        
         ax.format_xdata = mdates.DateFormatter('%Y-%m-%d')
         ax.format_ydata = int
         ax.grid(True)
