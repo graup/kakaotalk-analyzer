@@ -17,6 +17,11 @@ Usage
 
 Open a console and run `python kakaotalk.py path-to-file.txt action [period]`
 
+KakaoTalk splits export files after 1MB. You just need to read in the first file,
+the tool will automatically find the other parts.
+
+Run `python kakaotalk.py` to see available options.
+
 Example output
 --------------
 ![Example plot](http://f.cl.ly/items/3f0t1c3K1Y2n450u0z40/plot-output.png)

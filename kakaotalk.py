@@ -1,12 +1,20 @@
 #!/usr/bin/python
 
 """
-Simple analysis of KakaoTalk chat export files
+Simple analysis of KakaoTalk chat export files.
+Parses messages and senders into python objects
+Automatically reads split files.
+Either run this file directly or import as module
+
+    analyzer = MessageExportAnalyer(input_file_path)
+    print analyzer.messages
+    print analyzer.senders
 """
 
 from __future__ import division
 
-import sys, os
+import sys
+import glob
 import dateutil.parser
 from dateutil.relativedelta import relativedelta
 import datetime
@@ -24,13 +32,16 @@ LINE_TYPE_MESSAGE   = 2 # Line with datetime, sender and message
 
 class Message:
     dt = None
-    sender = None
+    response_time = 0
     text = ""
+    sender = None # pointer to sender
+    prev = None # pointer to previous message
 
-    def __init__(self, dt, sender, text):
+    def __init__(self, dt, sender, text, response_time):
         self.dt = dt
         self.sender = sender
         self.text = text
+        self.response_time = response_time
 
     def add_line(self, text):
         self.text = self.text + "\n" + text
@@ -44,26 +55,52 @@ class Message:
 class Sender:
     name = ""
     count = Counter(messages=0, words=0)
+    response_time = Counter(time=0, count=0)
 
     def __init__(self, name):
         self.name = name
 
+    def __str__(self):
+        return self.name
+
     def count_message(self, message):
-        self.count = self.count + Counter(messages=1,
-                                          words=message.count_words())
+        self.count = self.count + Counter(messages=1, words=message.count_words())
+
+    def count_response_time(self, seconds):
+        self.response_time = self.response_time + Counter(time=seconds, count=1)
+
+    def get_response_time(self):
+        return self.response_time['time'] / self.response_time['count']
 
 class MessageExportAnalyer:
     messages = []
     senders = {}
 
     def __init__(self, input_file_path):
-        self.parse_file(input_file_path)
+        """
+        Parse given file as well as check for split files.
+        Exports are split on 1MB files named a.txt, a-1.txt, a-2.txt and so on.
+        We use glob to automatically find them, but glob doesn't work with
+        utf8 filenames, so first get all files in this dir which have
+        split numbers in their filename.
+        """
+        regex = re.compile("^(.*/)(.*?)\.(.*?)$")
+        r = regex.search(input_file_path)
+        glob_string = unicode(r.groups()[0] + '*[0-9].*', sys.getfilesystemencoding())
+        file_path_beginning = unicode(r.groups()[0] + r.groups()[1], sys.getfilesystemencoding())
+        files = glob.glob(glob_string)
+        split_files = filter(lambda f: f.startswith(file_path_beginning), files)
+        all_files = [input_file_path] + split_files
+        for f in all_files:
+            print "Parsing file %s..." % f
+            self.parse_file(f)
+
+        print "Parsed %d messages in %d files" % (self.total_count(), len(all_files))
 
     def parse_file(self, input_file_path):
         """
-        Parses an export file
-        Parses every line on its own, but handles
-        continued messages
+        Parses one export file
+        Parses every line on its own while handling continued messages
         """
         try:
             f = open(input_file_path)
@@ -80,24 +117,34 @@ class MessageExportAnalyer:
             if t == LINE_TYPE_UNCHANGED and last_message:
                 last_message.add_line(text)
             elif t == LINE_TYPE_MESSAGE:
-                s = None
                 try:
                     sender = self.senders[sender_name]
                 except KeyError:
                     sender = Sender(sender_name)
                     self.senders[sender_name] = sender
-                message = Message(dt, sender, text)
+                if last_message and last_message.sender != sender:
+                    response_time = (dt - last_message.dt).total_seconds()
+                else:
+                    response_time = 0
+                message = Message(dt, sender, text, response_time)
+                message.prev = last_message
                 self.messages.append(message)
                 last_message = message
             else:
                 pass
+        last_message = None
         for message in self.messages:
             message.sender.count_message(message)
+           
+            # At every switch of sender, count response time for sender
+            if last_message and message.sender != last_message.sender:
+                message.sender.count_response_time(message.response_time)
+            last_message = message
 
     def parse_line(self, line):
         """
-        Parses a single line of the export
-        Handles dates and continued messages
+        Parses a single line of the export.
+        Recognizes dates and continued messages
         Returns a tuple of (type of line, datetime, sender name, message)
         """
         t = LINE_TYPE_UNCHANGED
@@ -136,16 +183,26 @@ class MessageExportAnalyer:
         """
         print "\nCounts per sender:"
         for (name, sender) in self.senders.iteritems():
-            print "%s:  %d messages, %d words, %.2f words/message" % (sender.name,
+            print "%s:  %d messages, %d words, %.2f words/message, Avg. response time: %.0f minutes" % (
+                        sender,
                         sender.count["messages"], sender.count["words"],
-                        sender.count["words"]/sender.count["messages"])
+                        sender.count["words"]/sender.count["messages"],
+                        sender.get_response_time()/60)
 
-        data = self.count_per_period('messages', 'day')
         print "\nMost active days:"
-
+        data = self.count_per_period('messages', 'day')
         sorted_data = sorted(data, key=operator.itemgetter(1), reverse=True)
         for date, count in sorted_data[:10]:
             print "%s: %d messages" % (date, count)
+
+        # print "\nSlowest responses:"
+        # sorted_data = sorted(self.messages, key=operator.attrgetter('response_time'), reverse=True)
+        # for message in sorted_data[:10]:
+        #    print "%s" % message.prev
+        #    print "(%.1f days later:)\n%s\n" % (message.response_time/(60*60*24), message)
+
+    def total_count(self):
+        return sum(s.count['messages'] for s in self.senders.itervalues())
 
     def count_per_period(self, counter, period):
         """
@@ -190,7 +247,7 @@ class MessageExportAnalyer:
             td = relativedelta(months=1)
 
         for date in dates:
-            # Fill in missing (count=0) dates
+            # Fill in missing dates (count=0)
             if last_date:
                 while (last_date+td) < date:
                     fill_date = last_date + td
@@ -214,7 +271,7 @@ class MessageExportAnalyer:
 
         data = self.count_per_period(counter, period)
         (dates, values) = zip(*data)
-        ax.plot(dates, values, label=("Messages per %s" % (period)))
+        ax.plot(dates, values, label=("%s per %s" % (counter, period)))
 
         # Plot trend
         # x = range(0, len(dates))
@@ -271,7 +328,6 @@ if __name__ == "__main__":
             print "Invalid period. Use one of %s" % (", ".join(possible_periods))
             sys.exit(1)
 
-        print "Parsing file..."
         analyzer = MessageExportAnalyer(input_file_path)
         if action == "stat":
             analyzer.stats()
