@@ -217,10 +217,19 @@ class MessageExportAnalyer:
         ax.plot(dates, values, label=("Messages per %s" % (period)))
 
         # Plot trend
-        x = range(0, len(dates))
-        fit = numpy.polyfit(x, values, 1)
-        fit_fn = numpy.poly1d(fit)
-        ax.plot(dates, fit_fn(x), '--k')
+        # x = range(0, len(dates))
+        # fit = numpy.polyfit(x, values, 1)
+        # fit_fn = numpy.poly1d(fit)
+        average_n = 3
+        if period == 'day':
+            average_n = 20
+        if period == 'week':
+            average_n = 5
+        def moving_average(a, n=3):
+            ret = numpy.cumsum(a, dtype=float)
+            ret[n:] = ret[n:] - ret[:-n]
+            return ret[:] / n
+        ax.plot(dates, moving_average(values, average_n), '--k')
 
         # Format for axis
         ax.xaxis.set_major_locator(months)
