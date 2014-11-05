@@ -72,7 +72,7 @@ class Sender:
     def get_response_time(self):
         return self.response_time['time'] / self.response_time['count']
 
-class MessageExportAnalyer:
+class MessageExportAnalyser:
     messages = []
     senders = {}
 
@@ -328,7 +328,7 @@ if __name__ == "__main__":
             print "Invalid period. Use one of %s" % (", ".join(possible_periods))
             sys.exit(1)
 
-        analyzer = MessageExportAnalyer(input_file_path)
+        analyzer = MessageExportAnalyser(input_file_path)
         if action == "stat":
             analyzer.stats()
         elif action == "plot":
