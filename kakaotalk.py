@@ -6,7 +6,7 @@ Parses messages and senders into python objects
 Automatically reads split files.
 Either run this file directly or import as module
 
-    analyzer = MessageExportAnalyer(input_file_path)
+    analyzer = MessageExportAnalyer(input_file_path, use_cache=True)
     print analyzer.messages
     print analyzer.senders
 """
@@ -19,8 +19,10 @@ import dateutil.parser
 from dateutil.relativedelta import relativedelta
 import datetime
 import re
+import time
 from collections import Counter
 import operator
+import pickle
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -66,24 +68,36 @@ class Sender:
     def count_message(self, message):
         self.count = self.count + Counter(messages=1, words=message.count_words())
 
-    def count_response_time(self, seconds):
-        self.response_time = self.response_time + Counter(time=seconds, count=1)
-
-    def get_response_time(self):
-        return self.response_time['time'] / self.response_time['count']
-
 class MessageExportAnalyser:
     messages = []
     senders = {}
 
-    def __init__(self, input_file_path):
+    def __init__(self, input_file_path, use_cache=True):
         """
         Parse given file as well as check for split files.
-        Exports are split on 1MB files named a.txt, a-1.txt, a-2.txt and so on.
-        We use glob to automatically find them, but glob doesn't work with
-        utf8 filenames, so first get all files in this dir which have
-        split numbers in their filename.
+        Exports can be split in files named a.txt, a-1.txt, a-2.txt and so on.
+        If use_cache is True the parsed content is saved as a bytestream and
+        the file is not reparsed.
         """
+        cache_file = input_file_path + '.data'
+        if use_cache:
+            # Read parsed data from cache
+            try:
+                f = open(cache_file, "r")
+                t_start = time.clock()
+                print "Parsing cached data..."
+                self.messages, self.senders = pickle.load(f)
+                print "Parsed %d messages in %.4f seconds" % (self.total_count(), time.clock()-t_start)
+                return
+            except IOError:
+                pass
+            except pickle.PickleError:
+                print "Error parsing cached data. Try deleting .data file."
+
+        t_start = time.clock()
+
+        # We use glob to automatically find split files, but glob doesn't work well with
+        # UTF-8 filenames, so we need to work around that...
         regex = re.compile("^(.*/)(.*?)\.(.*?)$")
         r = regex.search(input_file_path)
         glob_string = unicode(r.groups()[0] + '*[0-9].*', sys.getfilesystemencoding())
@@ -95,17 +109,25 @@ class MessageExportAnalyser:
             print "Parsing file %s..." % f
             self.parse_file(f)
 
-        print "Parsed %d messages in %d files" % (self.total_count(), len(all_files))
+        print "Parsed %d messages from %d files in %.4f seconds" % (self.total_count(), len(all_files), time.clock()-t_start)
+
+        if use_cache:
+            # Dump parsed data to cache
+            try:
+                f = open(cache_file, "w")
+                pickle.dump( (self.messages, self.senders, ), f)
+            except IOError:
+                print "Could not open cache file for saving parsed data."
 
     def parse_file(self, input_file_path):
         """
-        Parses one export file
-        Parses every line on its own while handling continued messages
+        Parses one export file.
+        Parses every line on its own while handling continued messages.
         """
         try:
             f = open(input_file_path)
         except IOError:
-            print "Input file not found."
+            print "Could not open input file %s." % input_file_path
             sys.exit(1)
 
         last_message = None
@@ -132,14 +154,9 @@ class MessageExportAnalyser:
                 last_message = message
             else:
                 pass
-        last_message = None
+
         for message in self.messages:
             message.sender.count_message(message)
-           
-            # At every switch of sender, count response time for sender
-            if last_message and message.sender != last_message.sender:
-                message.sender.count_response_time(message.response_time)
-            last_message = message
 
     def parse_line(self, line):
         """
@@ -181,13 +198,17 @@ class MessageExportAnalyser:
         """
         Prints some simple stats
         """
+        print "\nFirst message: %s" % self.messages[0].dt
+        print "Last message: %s" % self.messages[len(self.messages)-1].dt
+        time_range = self.messages[len(self.messages)-1].dt - self.messages[0].dt
+        print "(%d days, avg. %.1f messages per day)" % (time_range.days, len(self.messages)/time_range.days)
+
         print "\nCounts per sender:"
         for (name, sender) in self.senders.iteritems():
-            print "%s:  %d messages, %d words, %.2f words/message, Avg. response time: %.0f minutes" % (
+            print "%s:  %d messages, %d words, %.2f words/message" % (
                         sender,
                         sender.count["messages"], sender.count["words"],
-                        sender.count["words"]/sender.count["messages"],
-                        sender.get_response_time()/60)
+                        sender.count["words"]/sender.count["messages"])
 
         print "\nMost active days:"
         data = self.count_per_period('messages', 'day')
@@ -195,11 +216,11 @@ class MessageExportAnalyser:
         for date, count in sorted_data[:10]:
             print "%s: %d messages" % (date, count)
 
-        # print "\nSlowest responses:"
-        # sorted_data = sorted(self.messages, key=operator.attrgetter('response_time'), reverse=True)
-        # for message in sorted_data[:10]:
-        #    print "%s" % message.prev
-        #    print "(%.1f days later:)\n%s\n" % (message.response_time/(60*60*24), message)
+    def analyze(self):
+        print "\nLongest messages:"
+        sorted_data = sorted(self.messages, key=lambda x: len(x.text), reverse=True)
+        for message in sorted_data[:10]:
+            print "\n%s" % message
 
     def total_count(self):
         return sum(s.count['messages'] for s in self.senders.itervalues())
@@ -213,10 +234,15 @@ class MessageExportAnalyser:
 
         # Count messages
         for message in self.messages:
-            date = message.dt.date()
+            if period == 'hour':
+                date = message.dt
+            else:
+                date = message.dt.date()
 
             # Depending on requested period, adjust date
-            if period == 'day':
+            if period == 'hour':
+                date = date.replace(minute=0, second=0, microsecond=0)
+            elif period == 'day':
                 pass
             elif period == 'week':
                 date = date + datetime.timedelta(days=1-date.isoweekday())
@@ -226,7 +252,6 @@ class MessageExportAnalyser:
                 dates.append(date)
 
             # Determine what to count
-            cnt = 0
             if counter == 'messages':
                 cnt = 1
             elif counter == 'words':
@@ -239,7 +264,9 @@ class MessageExportAnalyser:
 
         # Timedelta to account for missing dates
         td = None
-        if period == 'day':
+        if period == 'hour':
+            td = datetime.timedelta(hours=1)
+        elif period == 'day':
             td = datetime.timedelta(days=1)
         elif period == 'week':
             td = datetime.timedelta(days=7)
@@ -273,20 +300,30 @@ class MessageExportAnalyser:
         (dates, values) = zip(*data)
         ax.plot(dates, values, label=("%s per %s" % (counter, period)))
 
-        # Plot trend
-        # x = range(0, len(dates))
-        # fit = numpy.polyfit(x, values, 1)
-        # fit_fn = numpy.poly1d(fit)
+        # Plot moving average
         average_n = 3
+        if period == 'hour':
+            average_n = 48
         if period == 'day':
-            average_n = 20
+            average_n = 30
         if period == 'week':
             average_n = 5
+
+        # a very simple and fast moving average
         def moving_average(a, n=3):
             ret = numpy.cumsum(a, dtype=float)
             ret[n:] = ret[n:] - ret[:-n]
             return ret[:] / n
-        ax.plot(dates, moving_average(values, average_n), '--k')
+        
+        # a moving average that looks behind and ahead
+        def moving_average2(a, n=3):
+            out = []
+            for s in range(0, len(a)):
+                first = s-n if s > n else 0
+                last = s+n if s+n < len(a) else len(a)
+                out.append(numpy.sum(a[first:last]) / (last-first))
+            return out
+        ax.plot(dates, moving_average2(values, average_n//2), '--k')
 
         # Format for axis
         ax.xaxis.set_major_locator(months)
@@ -299,7 +336,7 @@ class MessageExportAnalyser:
         ax.format_ydata = int
         ax.grid(True)
 
-        legend = ax.legend(loc='upper center')
+        ax.legend(loc='upper center')
 
         fig.autofmt_xdate()
         plt.show()
@@ -310,8 +347,11 @@ class MessageExportAnalyser:
 
 if __name__ == "__main__":
 
-    possible_periods = ['day', 'week', 'month']
-    possible_actions = ['data', 'stat', 'plot']
+    # periods to apply to plots
+    # hour is not recommended, takes a lot of memory and time
+    possible_periods = ['month', 'week', 'day', 'hour']
+    # actions this script handles
+    possible_actions = ['data', 'stat', 'plot', 'analyze']
 
     if (len(sys.argv) > 2):
         input_file_path = sys.argv[1];
@@ -331,6 +371,8 @@ if __name__ == "__main__":
         analyzer = MessageExportAnalyser(input_file_path)
         if action == "stat":
             analyzer.stats()
+        elif action == "analyze":
+            analyzer.analyze()
         elif action == "plot":
             print "Generating plots..."
             analyzer.plot('messages', period)
