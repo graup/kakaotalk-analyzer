@@ -70,7 +70,11 @@ class Sender:
         self.response_time = self.response_time + Counter(time=seconds, count=1)
 
     def get_response_time(self):
-        return self.response_time['time'] / self.response_time['count']
+        #TODO: fix it
+        try:
+            return self.response_time['time'] / self.response_time['count']
+        except Exception, e:
+            print "wtf"
 
 class MessageExportAnalyser:
     messages = []
@@ -113,11 +117,15 @@ class MessageExportAnalyser:
             line = line.strip()
             if not line:
                 continue
+
             (t, dt, sender_name, text) = self.parse_line(line)
-            if t == LINE_TYPE_UNCHANGED and last_message:
+            #print line + " " + str(dt)
+            if sender_name == "" or sender_name == " ":
+                pass
+            elif t == LINE_TYPE_UNCHANGED and last_message:
                 last_message.add_line(text)
             elif t == LINE_TYPE_MESSAGE:
-                try:
+                try: 
                     sender = self.senders[sender_name]
                 except KeyError:
                     sender = Sender(sender_name)
@@ -154,7 +162,7 @@ class MessageExportAnalyser:
 
         # Try to find a datetime at beginning of line
         # Export can be in different formats, so check multiple string lengths
-        for c in range(20,10,-1):
+        for c in range(40,10,-1):
             try:
                 dt = dateutil.parser.parse(line[0:c])
                 line = line[(c-1):]
@@ -195,11 +203,14 @@ class MessageExportAnalyser:
         for date, count in sorted_data[:10]:
             print "%s: %d messages" % (date, count)
 
-        # print "\nSlowest responses:"
-        # sorted_data = sorted(self.messages, key=operator.attrgetter('response_time'), reverse=True)
-        # for message in sorted_data[:10]:
-        #    print "%s" % message.prev
-        #    print "(%.1f days later:)\n%s\n" % (message.response_time/(60*60*24), message)
+        print "\nSlowest responses:"
+        sorted_data = sorted(self.messages, key=operator.attrgetter('response_time'), reverse=True)
+        for message in sorted_data[:5]:
+           print "%s" % message.prev
+           print "(%.1f days later:)\n%s\n" % (message.response_time/(60*60*24), message)
+
+        #most used word
+        print "\nMost used word for each users: "
 
     def total_count(self):
         return sum(s.count['messages'] for s in self.senders.itervalues())
