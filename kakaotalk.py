@@ -98,13 +98,13 @@ class MessageExportAnalyser:
 
         # We use glob to automatically find split files, but glob doesn't work well with
         # UTF-8 filenames, so we need to work around that...
-        regex = re.compile("^(.*/)(.*?)\.(.*?)$")
+        regex = re.compile("^(.*/)(.*?)(\-\d)?\.(.*?)$")
         r = regex.search(input_file_path)
         glob_string = unicode(r.groups()[0] + '*[0-9].*', sys.getfilesystemencoding())
         file_path_beginning = unicode(r.groups()[0] + r.groups()[1], sys.getfilesystemencoding())
         files = glob.glob(glob_string)
         split_files = filter(lambda f: f.startswith(file_path_beginning), files)
-        all_files = [input_file_path] + split_files
+        all_files = split_files
         for f in all_files:
             print "Parsing file %s..." % f
             self.parse_file(f)
