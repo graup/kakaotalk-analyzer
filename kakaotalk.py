@@ -171,7 +171,7 @@ class MessageExportAnalyser:
 
         # Try to find a datetime at beginning of line
         # Export can be in different formats, so check multiple string lengths
-        for c in range(20,10,-1):
+        for c in range(40,10,-1):
             try:
                 dt = dateutil.parser.parse(line[0:c])
                 line = line[(c-1):]
@@ -191,6 +191,9 @@ class MessageExportAnalyser:
             (sender, text) = [x.strip() for x in line.split(":", 1)]
         except ValueError:
             text = line
+
+        if sender == "" or sender == " ":
+            t = LINE_TYPE_UNCHANGED
 
         return (t, dt, sender, text)
 
