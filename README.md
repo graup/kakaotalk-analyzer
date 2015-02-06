@@ -6,7 +6,7 @@ Litte Python script to get statistics from KakaoTalk message export files.
 This is totally work-in-progress, but I will try to only put at
 least kind of functional versions up on GitHub.
 
-Last tested with KakaoTalk version 4.5.2
+Last tested with KakaoTalk version 4.5.2. Should work with most older versions, too.
 
 Feedback
 --------
@@ -32,4 +32,7 @@ Run `python kakaotalk.py` to see available options.
 
 Example output
 --------------
+
+`python kakaotalk.py path-to-file.txt stat week`
+
 ![Example plot](http://f.cl.ly/items/1r0C1l2G1C1P0c1w2x1t/Screen%20Shot%202015-02-06%20at%2018.35.13.png)
